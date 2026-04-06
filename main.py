@@ -116,6 +116,16 @@ FFMPEG_OPTIONS = {
     "options": "-vn",
 }
 
+# Resolve ffmpeg executable — checks common paths on Railway/Nix environments
+import shutil
+FFMPEG_EXECUTABLE = (
+    shutil.which("ffmpeg")
+    or "/usr/bin/ffmpeg"
+    or "/nix/var/nix/profiles/default/bin/ffmpeg"
+    or "ffmpeg"
+)
+print(f"FFmpeg path resolved to: {FFMPEG_EXECUTABLE}")
+
 # Sources tried in order until one succeeds.
 # Each entry is a dict of yt-dlp options with a "label" key for logging.
 AUDIO_SOURCES = [
@@ -238,7 +248,7 @@ def play_next(vc, guild_id):
     url, title = queue.pop(0)
     volume = music_volumes.get(guild_id, 0.5)
     source = discord.PCMVolumeTransformer(
-        discord.FFmpegPCMAudio(url, **FFMPEG_OPTIONS),
+        discord.FFmpegPCMAudio(url, executable=FFMPEG_EXECUTABLE, **FFMPEG_OPTIONS),
         volume=volume,
     )
     vc.play(source, after=lambda e: play_next(vc, guild_id))
