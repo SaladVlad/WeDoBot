@@ -115,7 +115,7 @@ YTDLP_OPTIONS = {
     "format": "bestaudio/best",
     "noplaylist": True,
     "quiet": True,
-    "default_search": "ytsearch",
+    "default_search": "https://music.youtube.com/search?q=",
 }
 
 FFMPEG_OPTIONS = {
