@@ -31,7 +31,7 @@ import os
 #  CONFIG — edit everything here
 # ============================================================
 
-TOKEN = os.environ.get("DISCORD_TOKEN", "your_token_here")
+TOKEN = os.environ["DISCORD_TOKEN"]
 
 # Your server (guild) ID
 GUILD_ID = 1490663487565992028
@@ -111,26 +111,98 @@ bot = commands.Bot(command_prefix=PREFIX, intents=intents)
 music_queues = {}  # guild_id -> list of (url, title)
 music_volumes = {} # guild_id -> float (0.0 - 1.0)
 
-YTDLP_OPTIONS = {
-    "format": "bestaudio/best",
-    "noplaylist": True,
-    "quiet": True,
-    "default_search": "ytsearch",
-    "http_headers": {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-    },
-    "extractor_args": {
-        "youtube": {
-            "player_client": ["web"],
-        }
-    },
-}
-
 FFMPEG_OPTIONS = {
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
     "options": "-vn",
 }
+
+# Sources tried in order until one succeeds.
+# Each entry is a dict of yt-dlp options with a "label" key for logging.
+AUDIO_SOURCES = [
+    {
+        "label": "YouTube (browser spoof)",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "ytsearch",
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web"],
+            }
+        },
+    },
+    {
+        "label": "YouTube Music",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "https://music.youtube.com/search?q=",
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        },
+    },
+    {
+        "label": "SoundCloud",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "scsearch",
+    },
+    {
+        "label": "Bandcamp",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "ytsearch",  # fallback search, direct Bandcamp URLs work natively
+    },
+    {
+        "label": "Deezer",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "deezersearch",
+    },
+    {
+        "label": "YouTube (android client)",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "ytsearch",
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["android"],
+            }
+        },
+    },
+    {
+        "label": "YouTube (ios client)",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "ytsearch",
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["ios"],
+            }
+        },
+    },
+    {
+        "label": "YouTube (tv client)",
+        "format": "bestaudio/best",
+        "noplaylist": True,
+        "quiet": True,
+        "default_search": "ytsearch",
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["tv_embedded"],
+            }
+        },
+    },
+]
 
 
 def get_queue(guild_id):
@@ -141,11 +213,22 @@ def get_queue(guild_id):
 
 async def fetch_audio(query):
     loop = asyncio.get_event_loop()
-    with yt_dlp.YoutubeDL(YTDLP_OPTIONS) as ydl:
-        info = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
-        if "entries" in info:
-            info = info["entries"][0]
-        return info["url"], info.get("title", "Unknown")
+    last_error = None
+    for source in AUDIO_SOURCES:
+        label = source["label"]
+        opts = {k: v for k, v in source.items() if k != "label"}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = await loop.run_in_executor(None, lambda: ydl.extract_info(query, download=False))
+                if "entries" in info:
+                    info = info["entries"][0]
+                print(f"Audio fetched via: {label}")
+                return info["url"], info.get("title", "Unknown")
+        except Exception as e:
+            print(f"Source [{label}] failed: {e}")
+            last_error = e
+            continue
+    raise Exception(f"All sources failed. Last error: {last_error}")
 
 
 def play_next(vc, guild_id):
